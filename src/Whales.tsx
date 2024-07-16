@@ -22,14 +22,14 @@ let mesh: InstancedSkinnedMesh | null = null
 export const Whales = ({ count = 1, ...props }: WhalesProps) => {
   const group = useRef<Group>(null)
 
-  const { scene, animations } = useGLTF("/whale.gltf")
+  const { scene, nodes, animations } = useGLTF("/whale.gltf")
 
   // do: useAnimations(animations, ...)
 
   useEffect(() => {
-    if (!scene) return
+    if (!scene || !nodes) return
 
-    const m: SkinnedMesh = scene.getObjectByName("poly_whale") as SkinnedMesh
+    const m: SkinnedMesh = nodes.poly_whale as SkinnedMesh
 
     if (!m) return
 
