@@ -1,7 +1,7 @@
-import { useGLTF } from "@react-three/drei"
+import { useAnimations, useGLTF } from "@react-three/drei"
 import { GroupProps, useFrame } from "@react-three/fiber"
 import { useEffect, useRef } from "react"
-import { Group, AnimationMixer, Color, SkinnedMesh, Vector4 } from "three"
+import { Group, Mesh, SkinnedMesh, Vector4 } from "three"
 import { InstancedSkinnedMesh } from "./InstancedSkinnedMesh.js"
 
 type Props = {
@@ -14,54 +14,87 @@ type WhalesProps = GroupProps & Props
 const amount = 4
 const duration = 3.25
 const variance: Vector4[] = []
-let mixer: AnimationMixer | null = null // do: useAnimations(animations, ...)
 
-let dummy: SkinnedMesh | null = null
-let mesh: InstancedSkinnedMesh | null = null
+const dummies: SkinnedMesh[] = []
+const meshes: InstancedSkinnedMesh[] = []
 
 export const Whales = ({ count = 1, ...props }: WhalesProps) => {
+  const hasMounted = useRef(false)
+
   const group = useRef<Group>(null)
 
-  const { scene, nodes, animations } = useGLTF("/whale.gltf")
+  const { scene, nodes, animations } = useGLTF("/knight.glb")
 
-  // do: useAnimations(animations, ...)
+  const { actions } = useAnimations(animations, scene)
 
   useEffect(() => {
+    if (hasMounted.current) return
+    hasMounted.current = true
+
     if (!scene || !nodes) return
 
-    const m: SkinnedMesh = nodes.poly_whale as SkinnedMesh
+    const bodyParts = [
+      "Knight_Head",
+      "Knight_Body",
+      "Knight_ArmLeft",
+      "Knight_ArmRight",
+      "Knight_LegLeft",
+      "Knight_LegRight",
+    ]
 
-    if (!m) return
+    for (const part of bodyParts) {
+      const m: SkinnedMesh = nodes[part] as SkinnedMesh
 
-    dummy = m
+      if (!m) return
 
-    mesh = new InstancedSkinnedMesh(m.geometry, m.material, count)
+      dummies.push(m)
 
-    mesh.copy(m)
-    mesh.bind(m.skeleton, m.bindMatrix)
+      const mesh = new InstancedSkinnedMesh(m.geometry, m.material, count)
 
-    m.visible = false
+      mesh.copy(m)
+      mesh.bind(m.skeleton, m.bindMatrix)
 
-    mesh.frustumCulled = false
+      m.visible = false
 
-    mixer = new AnimationMixer(scene)
+      mesh.frustumCulled = false
 
-    // mixer.clipAction(scene.animations[0], mesh).play()
-    mixer.clipAction(animations[0]).play()
+      actions["1H_Melee_Attack_Chop"]?.reset().fadeIn(0.25).play()
 
-    for (let i = 0; i < count; i++) {
-      const v = new Vector4(Math.random(), Math.random() * 2 - 1, 3 * Math.random(), duration * Math.random())
+      for (let i = 0; i < count; i++) {
+        const v = new Vector4(
+          Math.random(),
+          Math.random() * 2 - 1,
+          3 * Math.random(),
+          duration * Math.random()
+        )
 
-      variance.push(v)
+        variance.push(v)
+      }
 
-      mesh.setColorAt(i, new Color(`hsl(${Math.random() * 360}, 100%, 50%)`))
+      if (part === "Knight_Head") {
+        const helmet = new Mesh(nodes.Knight_Helmet.geometry, nodes.Knight_Helmet.material)
+
+        helmet.frustumCulled = false
+
+        mesh.add(helmet)
+      }
+
+      if (part === "Knight_HandRight") {
+        const sword = new Mesh(nodes["1H_Sword"].geometry, nodes["1H_Sword"].material)
+
+        sword.frustumCulled = false
+
+        mesh.add(sword)
+      }
+
+      group.current?.add(mesh)
+
+      meshes.push(mesh)
     }
+  }, [actions, animations, count, nodes, scene])
 
-    group.current?.add(mesh)
-  }, [animations, count, scene])
-
-  useFrame(({ clock }) => {
-    if (!mesh || !dummy || !mixer) return
+  useFrame(() => {
+    if (!meshes.length || !dummies.length) return
 
     let i = 0
 
@@ -72,45 +105,36 @@ export const Whales = ({ count = 1, ...props }: WhalesProps) => {
         for (let z = 0; z < 3 * amount; z++) {
           const v = variance[i++]
 
-          const t = (v.w + clock.elapsedTime) % duration
+          for (const dummy of dummies) {
+            dummy.position.set(offset - 2 * x + v.x, offset - y + v.y, offset - 4 * z + v.z)
 
-          const pt = Math.abs(0.5 - t / duration)
+            dummy.updateMatrix()
 
-          dummy.position.set(
-            offset - 2 * x + v.x,
-            offset - y + v.y,
-            offset - 4 * z + v.z - clock.elapsedTime + Math.pow(pt, 4)
-          )
+            dummy.skeleton.bones.forEach((b) => {
+              b.updateMatrixWorld()
+            })
 
-          dummy.position.multiplyScalar(5)
-
-          dummy.position.z = 50 + (dummy.position.z % 120)
-
-          dummy.updateMatrix()
-
-          mixer.setTime(t)
-
-          dummy.skeleton.bones.forEach((b) => {
-            b.updateMatrixWorld()
-          })
-
-          mesh.setMatrixAt(i, dummy.matrix)
-
-          mesh.setBonesAt(i, dummy.skeleton)
+            for (const mesh of meshes) {
+              mesh.setMatrixAt(i, dummy.matrix)
+              mesh.setBonesAt(i, dummy.skeleton)
+            }
+          }
         }
       }
     }
 
-    mesh.instanceMatrix.needsUpdate = true
+    for (const mesh of meshes) {
+      mesh.instanceMatrix.needsUpdate = true
 
-    if (mesh.skeleton && mesh.skeleton.boneTexture) {
-      mesh.skeleton.boneTexture.needsUpdate = true
+      if (mesh.skeleton && mesh.skeleton.boneTexture) {
+        mesh.skeleton.boneTexture.needsUpdate = true
+      }
     }
   })
 
   return (
     <group {...props}>
-      <group ref={group} />
+      <group ref={group} castShadow receiveShadow />
     </group>
   )
 }
