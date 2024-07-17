@@ -66,6 +66,16 @@ export class InstancedSkinnedMesh extends THREE.SkinnedMesh {
     if (!patchedChunks) {
       patchedChunks = true
 
+      // make it work with three.js >= 0.162.0
+      // references:
+      //  https://github.com/mrdoob/three.js/pull/27669/files
+      //  https://github.com/aresrpg/aresrpg-dapp/pull/46/files
+      THREE.ShaderChunk.morphinstance_vertex = /* glsl */ `
+        #ifdef MORPHTARGETS_COUNT
+          ${THREE.ShaderChunk.morphinstance_vertex}
+        #endif
+      `
+
       THREE.ShaderChunk.points_vert = THREE.ShaderChunk.points_vert.replace(
         "#include <clipping_planes_pars_vertex>",
         "#include <clipping_planes_pars_vertex>\n#include <skinning_pars_vertex>"
